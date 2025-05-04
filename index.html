@@ -2,125 +2,90 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>YouTube to Vibration</title>
+  <title>Audio File to Vibration</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
     body {
       background: #121212;
-      color: white;
+      color: #ffffff;
       font-family: sans-serif;
       text-align: center;
-      padding: 20px;
+      padding: 40px;
     }
     input, button {
-      padding: 10px;
+      padding: 12px;
       font-size: 16px;
       margin: 10px;
-      width: 80%;
-      max-width: 500px;
-      border-radius: 8px;
       border: none;
+      border-radius: 6px;
     }
-    iframe {
-      margin-top: 20px;
-      width: 100%;
-      max-width: 560px;
-      height: 315px;
+    button {
+      background-color: #03dac6;
+      color: #000;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
 
-  <h1>YouTube Sound → Phone Vibration</h1>
-  <p>Paste a YouTube video link below:</p>
-  <input type="text" id="ytUrl" placeholder="https://www.youtube.com/watch?v=..." />
+  <h1>🔊 Audio to Vibration</h1>
+  <p>Select an audio file (MP3, WAV, etc.)</p>
+  <input type="file" accept="audio/*" id="audioFile" />
   <br>
-  <button onclick="loadVideo()">Load & Play</button>
+  <button onclick="startPlayback()">Start Vibration</button>
+  <button onclick="stopPlayback()">Stop</button>
 
-  <div id="playerContainer"></div>
+  <audio id="audio" controls style="margin-top:20px; width: 80%; max-width: 500px;"></audio>
 
   <script>
-    let player, audioCtx, sourceNode, analyser, dataArray, vibrationLoop;
+    let audioCtx, sourceNode, analyser, dataArray, interval;
 
-    function loadVideo() {
-      const url = document.getElementById("ytUrl").value;
-      const videoId = extractVideoID(url);
-      if (!videoId) {
-        alert("Invalid YouTube URL");
+    function startPlayback() {
+      const fileInput = document.getElementById('audioFile');
+      const audio = document.getElementById('audio');
+
+      if (!fileInput.files.length) {
+        alert("Please select an audio file.");
         return;
       }
 
-      if (player) player.destroy();
+      const file = fileInput.files[0];
+      const url = URL.createObjectURL(file);
+      audio.src = url;
+      audio.play();
 
-      const iframeDiv = document.createElement("div");
-      iframeDiv.id = "player";
-      document.getElementById("playerContainer").innerHTML = "";
-      document.getElementById("playerContainer").appendChild(iframeDiv);
-
-      // Load YouTube Player API
-      if (!window.YT) {
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        document.body.appendChild(tag);
-        window.onYouTubeIframeAPIReady = () => createPlayer(videoId);
-      } else {
-        createPlayer(videoId);
+      if (!navigator.vibrate) {
+        alert("Vibration not supported on this device.");
+        return;
       }
-    }
 
-    function extractVideoID(url) {
-      const match = url.match(/(?:\?v=|\/embed\/|\.be\/)([a-zA-Z0-9_-]{11})/);
-      return match ? match[1] : null;
-    }
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      sourceNode = audioCtx.createMediaElementSource(audio);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      const bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
 
-    function createPlayer(videoId) {
-      player = new YT.Player('player', {
-        height: '315',
-        width: '560',
-        videoId: videoId,
-        events: {
-          'onReady': onPlayerReady
+      sourceNode.connect(analyser);
+      analyser.connect(audioCtx.destination);
+
+      interval = setInterval(() => {
+        analyser.getByteFrequencyData(dataArray);
+        const avg = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
+        if (avg > 100) {
+          navigator.vibrate(150); // Vibrate 150ms on loud sound
         }
-      });
+      }, 200);
     }
 
-    function onPlayerReady(event) {
-      event.target.playVideo();
-      setupAudioAnalysis(event.target.getIframe());
-    }
-
-    function setupAudioAnalysis(iframe) {
-      const iframeWindow = iframe.contentWindow;
-      const iframeSrc = iframe.src;
-
-      try {
-        audioCtx = new AudioContext();
-        const audio = new Audio(iframeSrc);
-        audio.crossOrigin = "anonymous";
-        audio.play();
-
-        sourceNode = audioCtx.createMediaElementSource(audio);
-        analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 256;
-        const bufferLength = analyser.frequencyBinCount;
-        dataArray = new Uint8Array(bufferLength);
-
-        sourceNode.connect(analyser);
-        analyser.connect(audioCtx.destination);
-
-        if (vibrationLoop) clearInterval(vibrationLoop);
-        vibrationLoop = setInterval(() => {
-          analyser.getByteFrequencyData(dataArray);
-          const avg = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
-          if (avg > 100) {
-            navigator.vibrate(100);
-          }
-        }, 200);
-
-      } catch (err) {
-        console.error("Audio processing failed:", err);
-        alert("Audio analysis may not be supported in this browser.");
-      }
+    function stopPlayback() {
+      const audio = document.getElementById('audio');
+      audio.pause();
+      if (interval) clearInterval(interval);
+      if (sourceNode) sourceNode.disconnect();
+      if (analyser) analyser.disconnect();
+      if (audioCtx) audioCtx.close();
+      navigator.vibrate(0); // Stop vibration
     }
   </script>
 
