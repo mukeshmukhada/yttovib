@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>YouTube to Vibration</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      background: #121212;
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 20px;
+    }
+    input, button {
+      padding: 10px;
+      font-size: 16px;
+      margin: 10px;
+      width: 80%;
+      max-width: 500px;
+      border-radius: 8px;
+      border: none;
+    }
+    iframe {
+      margin-top: 20px;
+      width: 100%;
+      max-width: 560px;
+      height: 315px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>YouTube Sound → Phone Vibration</h1>
+  <p>Paste a YouTube video link below:</p>
+  <input type="text" id="ytUrl" placeholder="https://www.youtube.com/watch?v=..." />
+  <br>
+  <button onclick="loadVideo()">Load & Play</button>
+
+  <div id="playerContainer"></div>
+
+  <script>
+    let player, audioCtx, sourceNode, analyser, dataArray, vibrationLoop;
+
+    function loadVideo() {
+      const url = document.getElementById("ytUrl").value;
+      const videoId = extractVideoID(url);
+      if (!videoId) {
+        alert("Invalid YouTube URL");
+        return;
+      }
+
+      if (player) player.destroy();
+
+      const iframeDiv = document.createElement("div");
+      iframeDiv.id = "player";
+      document.getElementById("playerContainer").innerHTML = "";
+      document.getElementById("playerContainer").appendChild(iframeDiv);
+
+      // Load YouTube Player API
+      if (!window.YT) {
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.body.appendChild(tag);
+        window.onYouTubeIframeAPIReady = () => createPlayer(videoId);
+      } else {
+        createPlayer(videoId);
+      }
+    }
+
+    function extractVideoID(url) {
+      const match = url.match(/(?:\?v=|\/embed\/|\.be\/)([a-zA-Z0-9_-]{11})/);
+      return match ? match[1] : null;
+    }
+
+    function createPlayer(videoId) {
+      player = new YT.Player('player', {
+        height: '315',
+        width: '560',
+        videoId: videoId,
+        events: {
+          'onReady': onPlayerReady
+        }
+      });
+    }
+
+    function onPlayerReady(event) {
+      event.target.playVideo();
+      setupAudioAnalysis(event.target.getIframe());
+    }
+
+    function setupAudioAnalysis(iframe) {
+      const iframeWindow = iframe.contentWindow;
+      const iframeSrc = iframe.src;
+
+      try {
+        audioCtx = new AudioContext();
+        const audio = new Audio(iframeSrc);
+        audio.crossOrigin = "anonymous";
+        audio.play();
+
+        sourceNode = audioCtx.createMediaElementSource(audio);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+        const bufferLength = analyser.frequencyBinCount;
+        dataArray = new Uint8Array(bufferLength);
+
+        sourceNode.connect(analyser);
+        analyser.connect(audioCtx.destination);
+
+        if (vibrationLoop) clearInterval(vibrationLoop);
+        vibrationLoop = setInterval(() => {
+          analyser.getByteFrequencyData(dataArray);
+          const avg = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
+          if (avg > 100) {
+            navigator.vibrate(100);
+          }
+        }, 200);
+
+      } catch (err) {
+        console.error("Audio processing failed:", err);
+        alert("Audio analysis may not be supported in this browser.");
+      }
+    }
+  </script>
+
+</body>
+</html>
