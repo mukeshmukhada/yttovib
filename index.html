@@ -2,92 +2,66 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Audio File to Vibration</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio to Vibration</title>
   <style>
-    body {
-      background: #121212;
-      color: #ffffff;
-      font-family: sans-serif;
-      text-align: center;
-      padding: 40px;
-    }
-    input, button {
-      padding: 12px;
-      font-size: 16px;
-      margin: 10px;
-      border: none;
-      border-radius: 6px;
-    }
-    button {
-      background-color: #03dac6;
-      color: #000;
-      cursor: pointer;
-    }
+    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
+    h1 { font-size: 1.5rem; }
+    input { margin-top: 1rem; }
+    button { margin-top: 1rem; padding: 0.5rem 1rem; }
   </style>
 </head>
 <body>
-
-  <h1>🔊 Audio to Vibration</h1>
-  <p>Select an audio file (MP3, WAV, etc.)</p>
-  <input type="file" accept="audio/*" id="audioFile" />
-  <br>
-  <button onclick="startPlayback()">Start Vibration</button>
-  <button onclick="stopPlayback()">Stop</button>
-
-  <audio id="audio" controls style="margin-top:20px; width: 80%; max-width: 500px;"></audio>
+  <h1>Convert Audio to Vibration</h1>
+  <input type="file" id="audioFile" accept="audio/*"><br>
+  <button id="processBtn">Convert & Vibrate</button>
 
   <script>
-    let audioCtx, sourceNode, analyser, dataArray, interval;
+    const fileInput = document.getElementById('audioFile');
+    const button = document.getElementById('processBtn');
 
-    function startPlayback() {
-      const fileInput = document.getElementById('audioFile');
-      const audio = document.getElementById('audio');
-
-      if (!fileInput.files.length) {
-        alert("Please select an audio file.");
+    button.onclick = async () => {
+      if (!fileInput.files[0]) {
+        alert('Please select an audio file.');
         return;
       }
 
       const file = fileInput.files[0];
-      const url = URL.createObjectURL(file);
-      audio.src = url;
-      audio.play();
+      const arrayBuffer = await file.arrayBuffer();
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+      const data = audioBuffer.getChannelData(0); // mono for simplicity
 
-      if (!navigator.vibrate) {
-        alert("Vibration not supported on this device.");
-        return;
+      const chunkSize = 1024; // ~23ms at 44.1kHz
+      const pattern = [];
+
+      for (let i = 0; i < data.length; i += chunkSize) {
+        let sum = 0;
+        for (let j = 0; j < chunkSize && i + j < data.length; j++) {
+          sum += Math.abs(data[i + j]);
+        }
+        const avg = sum / chunkSize;
+
+        // Map avg volume to vibration or pause duration
+        if (avg > 0.1) {
+          pattern.push(50); // vibrate 50ms
+        } else {
+          pattern.push(0);  // no vibration
+        }
+        pattern.push(50);   // always pause 50ms
       }
 
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      sourceNode = audioCtx.createMediaElementSource(audio);
-      analyser = audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-      const bufferLength = analyser.frequencyBinCount;
-      dataArray = new Uint8Array(bufferLength);
+      // Limit pattern length for browser limits
+      const limitedPattern = pattern.slice(0, 300); // ~15s
 
-      sourceNode.connect(analyser);
-      analyser.connect(audioCtx.destination);
-
-      interval = setInterval(() => {
-        analyser.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((a, b) => a + b, 0) / bufferLength;
-        if (avg > 100) {
-          navigator.vibrate(150); // Vibrate 150ms on loud sound
+      if ('vibrate' in navigator) {
+        const success = navigator.vibrate(limitedPattern);
+        if (!success) {
+          alert("Vibration failed (maybe browser doesn't support it).");
         }
-      }, 200);
-    }
-
-    function stopPlayback() {
-      const audio = document.getElementById('audio');
-      audio.pause();
-      if (interval) clearInterval(interval);
-      if (sourceNode) sourceNode.disconnect();
-      if (analyser) analyser.disconnect();
-      if (audioCtx) audioCtx.close();
-      navigator.vibrate(0); // Stop vibration
-    }
+      } else {
+        alert("Vibration API not supported on this device.");
+      }
+    };
   </script>
-
 </body>
 </html>
