@@ -4,22 +4,25 @@
   <meta charset="UTF-8">
   <title>Audio to Vibration</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 2rem; background: #f9f9f9; }
-    h1 { font-size: 1.5rem; }
-    input { margin-top: 1rem; }
-    button { margin-top: 1rem; padding: 0.5rem 1rem; }
+    body { font-family: Arial, sans-serif; padding: 2rem; background: #f0f0f0; }
+    button, input { margin-top: 1rem; padding: 0.5rem 1rem; }
   </style>
 </head>
 <body>
-  <h1>Convert Audio to Vibration</h1>
+  <h1>Audio to Vibration (Extended)</h1>
   <input type="file" id="audioFile" accept="audio/*"><br>
-  <button id="processBtn">Convert & Vibrate</button>
+  <button id="startBtn">Start Vibration</button>
+  <button id="stopBtn">Stop</button>
 
   <script>
     const fileInput = document.getElementById('audioFile');
-    const button = document.getElementById('processBtn');
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
 
-    button.onclick = async () => {
+    let intervalId = null;
+    let patternChunks = [];
+
+    startBtn.onclick = async () => {
       if (!fileInput.files[0]) {
         alert('Please select an audio file.');
         return;
@@ -29,10 +32,10 @@
       const arrayBuffer = await file.arrayBuffer();
       const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-      const data = audioBuffer.getChannelData(0); // mono for simplicity
+      const data = audioBuffer.getChannelData(0); // mono
 
-      const chunkSize = 1024; // ~23ms at 44.1kHz
-      const pattern = [];
+      const chunkSize = 2048; // ~46ms at 44.1kHz
+      patternChunks = [];
 
       for (let i = 0; i < data.length; i += chunkSize) {
         let sum = 0;
@@ -41,25 +44,31 @@
         }
         const avg = sum / chunkSize;
 
-        // Map avg volume to vibration or pause duration
-        if (avg > 0.1) {
-          pattern.push(50); // vibrate 50ms
+        if (avg > 0.05) {
+          patternChunks.push(50); // vibrate
         } else {
-          pattern.push(0);  // no vibration
+          patternChunks.push(0); // skip
         }
-        pattern.push(50);   // always pause 50ms
       }
 
-      // Limit pattern length for browser limits
-      const limitedPattern = pattern.slice(0, 300); // ~15s
-
-      if ('vibrate' in navigator) {
-        const success = navigator.vibrate(limitedPattern);
-        if (!success) {
-          alert("Vibration failed (maybe browser doesn't support it).");
+      // Play in real-time chunks
+      let index = 0;
+      intervalId = setInterval(() => {
+        if (index >= patternChunks.length) {
+          clearInterval(intervalId);
+          return;
         }
-      } else {
-        alert("Vibration API not supported on this device.");
+
+        const duration = patternChunks[index];
+        if (duration > 0) navigator.vibrate(duration);
+        index++;
+      }, 60); // about 60ms per step (real-time feel)
+    };
+
+    stopBtn.onclick = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        navigator.vibrate(0); // stop vibrating
       }
     };
   </script>
